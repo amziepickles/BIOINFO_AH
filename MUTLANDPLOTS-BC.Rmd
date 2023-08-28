@@ -1,0 +1,141 @@
+---
+title: "Cell-Line-Mutations"
+output: html_document
+date: "2023-08-23"
+---
+
+```{r}
+library("GenVisR")
+library(gridExtra)
+```
+
+
+```{r}
+setwd('/Users/amyhayward/Documents/BIOINFORMATICS MSC/Project/FINAL_FILES')
+mutation_data <- read.delim("MUTATIONS-ALL-AH.txt", header=TRUE, sep="\t")
+mutation_data
+```
+
+```{r}
+gof <- c('ATM',
+'BRCA1',
+'BRCA2',
+'RAD51',
+'RAD51B',
+'RAD51D',
+'XRCC2',
+'XRCC3',
+'RAD52',
+'RAD54L',
+'RAD50',
+'MRE11',
+'RBBP8',
+'MUS81',
+'EME1',
+'EME2',
+'SLX1A',
+'SLX1B',
+'TP53BP1',
+'MAD2L2',
+'RIF1',
+'SHLD1',
+'SHLD2',
+'SHLD3',
+'SETD1A',
+'BOD1L1')
+```
+
+```{r}
+samples <- c('BT483',
+ 'HCC1428',
+ 'BT474',
+ 'ZR7530',
+ 'MFM223',
+ 'MDAMB330',
+ 'CAL851',
+ 'HCC1500',
+ 'HCC1187',
+ 'MDAMB453',
+ 'MDAMB361',
+ 'HCC1419',
+ 'BT20',
+ 'MDAMB157',
+ 'HCC1937',
+ 'UACC893',
+ 'HS578T',
+ 'CAL120',
+ 'HCC1954',
+ 'JIMT1',
+ 'COLO824',
+ 'MCF7',
+ 'T47D',
+ 'EFM19',
+ 'CAMA1',
+ 'HCC2157',
+ 'HCC2218',
+ 'MDAMB436',
+ 'HCC1569',
+ 'HCC1143',
+ 'MDAMB415',
+ 'BT549',
+ 'EFM192A',
+ 'HDQP1',
+ 'HCC38',
+ 'MDAMB175VII',
+ 'MDAMB231',
+ 'OCUBM',
+ 'HCC70',
+ 'MDAMB468',
+ 'EVSAT',
+ 'YMB1E',
+ 'AU565',
+ 'MRKnu1',
+ 'HCC1395',
+ 'HCC1599',
+ 'UACC812',
+ 'CAL51',
+ 'DU4475',
+ 'CAL148')
+```
+
+```{r}
+most_deleterious <- c("nonsense", "frameshift", "ess_splice", "missense", "silent")
+mutationColours <- c('nonsense'='#ff9b34',"ess_splice"='#90ddee', "frameshift"='#c2ed67', "missense"='#ca66ae', "silent"='#c2ed67')
+```
+
+
+```{r}
+
+sample_sheet_file <- 'TALA_TERTILE_LN.csv'
+sample_sheet <- read.table(sample_sheet_file, header = T, sep = ',', row.names = 1)
+sample_sheet
+```
+```{r}
+sample_sheet <- data.frame(index = rownames(sample_sheet), sample_sheet)
+colnames(sample_sheet)[1] <- "sample"
+rownames(sample_sheet) <- NULL
+sample_sheet
+
+```
+```{r}
+colnames(sample_sheet)[5] <- "value"
+colnames(sample_sheet)[9] <- "variable"
+
+sample_sheet <- sample_sheet[, c("sample", "variable", "value")]
+sample_sheet
+```
+```{r}
+sample_sheet$value <- sample_sheet$variable
+sample_sheet
+```
+
+
+```{r}
+pdf(file="BREAST-CANCER-MP-TALA.pdf", height=10, width=15)
+wfall <- waterfall(mutation_data, fileType="Custom", variant_class_order = most_deleterious, mainXlabel=TRUE, mainDropMut = TRUE, mainRecurCutoff=0.0, maxGenes = 40, main_geneLabSize = 18, rmvSilent = FALSE, mainPalette = mutationColours, geneOrder = gof, sampOrder = samples, mainLabelSize = 10, clinData=sample_sheet, section_heights=c(1, 5, 1), clinVarCol=c('more resistant'='#ccbadc', 'intermediate'='#9975b9', 'less resistant'='#663096'))
+
+grid.arrange(wfall, ncol=1)
+
+```
+
+

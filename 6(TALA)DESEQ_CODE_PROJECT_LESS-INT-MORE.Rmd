@@ -1,0 +1,250 @@
+---
+title: "DESeq_TALA"
+output: html_document
+date: "2023-07-27"
+---
+
+#LOADING LIBRARIES
+```{r}
+suppressMessages(library(DESeq2))
+suppressMessages(library(ggplot2))
+suppressMessages(library(gplots))
+suppressMessages(library(plotly))
+suppressMessages(library(RColorBrewer))
+library(ggvenn)
+library(sva)
+```
+
+#SET WORKING DIRECTORY
+```{r}
+rm(list = ls())
+setwd('/Users/amyhayward/Documents/BIOINFORMATICS MSC/Project/FINAL_FILES')
+```
+
+#LOAD SAMPLE SHEET
+```{r}
+sample_sheet_file <- 'TALA_TERTILE_LN.csv'
+sample_sheet <- read.table(sample_sheet_file, header = T, sep = ',', row.names = 1)
+sample_sheet$resistance_label <- gsub("[^A-Za-z0-9_.]", "_", sample_sheet$resistance_label)
+```
+
+#LOAD EXPRESSION DATA
+```{r}
+raw_counts_file <- "RAW_CLEAN_DESEQ_TALA.csv"
+raw_counts <- read.table(raw_counts_file, header = T, sep = ',', row.names = 1, check.names = F)
+```
+
+
+#LOAD FILE SO WE CAN MATCH SAMPLES TO TRAINING DATA
+```{r}
+cols_to_match_file <- "X_TRAIN_MATCH_TALA.csv"
+cols_to_match <- read.table(cols_to_match_file, header = T, sep = ',', row.names = 1, check.names = F)
+
+dup_cols <- intersect(names(raw_counts), names(cols_to_match))
+raw_counts <- raw_counts[,dup_cols]
+raw_counts[raw_counts == 0] <- 1
+```
+
+```{r}
+head(raw_counts)
+```
+
+#MATCH SAMPLE ORDER AND CREATE MATRIX
+```{r}
+sample_sheet <- sample_sheet[rownames(raw_counts), ]
+
+raw_matrix <- as.matrix(raw_counts)
+raw_matrix <- t(raw_matrix)
+```
+
+```{r}
+raw_matrix[raw_matrix == 0] <- 1
+```
+
+```{r}
+dim(raw_matrix)
+```
+
+
+#APPLY DESeq
+
+```{r}
+dds <- DESeqDataSetFromMatrix(raw_matrix, colData = sample_sheet, design = ~resistance_label)
+```
+
+#DISPERSION PLOT
+```{r}
+dds <- DESeq(dds)
+plotDispEsts(dds)
+```
+
+#GET RESULTS NAME
+```{r}
+resultsNames(dds)[-1]
+```
+
+```{r}
+res_less_vs_int <- results(dds, name = "resistance_label_less_resistant_vs_intermediate")
+res_more_vs_int <- results(dds, name = "resistance_label_more_resistant_vs_intermediate")
+```
+
+
+#GET RESULTS WHICH PVALUE <0.05 AND PADJ <0.1
+```{r}
+cat(paste0('significant p-values = ', sum(res_less_vs_int$pvalue < 0.05, na.rm = T), '\n'))
+cat(paste0('significant p-adjust = ', sum(res_less_vs_int$padj < 0.05, na.rm = T), '\n'))
+```
+
+```{r}
+cat(paste0('significant p-values = ', sum(res_more_vs_int$pvalue < 0.05, na.rm = T), '\n'))
+cat(paste0('significant p-adjust = ', sum(res_more_vs_int$padj < 0.05, na.rm = T), '\n'))
+```
+
+
+#OBTAIN NORMALISED READ COUNTS
+```{r}
+norm_counts <- counts(dds) 
+```
+
+#OBTAIN VST TRANSFORMED COUNTS
+```{r}
+vds <- varianceStabilizingTransformation(dds)
+vst_counts <- as.matrix(assay(vds))
+```
+
+#RESULTS VISUALISATION
+```{r}
+pca.plot <- function(read.counts, classes, 
+                     comps = c(1, 2), ntop = min(500, nrow(read.counts)), standard = T,
+                     col = c('lightblue', 'orange', 'MediumVioletRed', 'SpringGreen')){
+  top_index <- order(rowVars(read.counts), decreasing = TRUE)[1:ntop]
+  pca <- prcomp(scale(t(read.counts[top_index,]), center = standard, scale = standard))
+  prp <- pca$sdev^2 * 100 / sum(pca$sdev^2)
+  
+  pca_comps <- pca$x[,comps]
+  prp_comps <- round(prp[comps], 2)
+
+  df <- data.frame(pc1 = pca_comps[,1], pc2 = pca_comps[,2], condition = classes)
+  p  <- ggplot(df, aes(x = pc1, y = pc2, color = condition)) + 
+        geom_point(size = 3) + 
+        labs(title = paste0('Principal Component Analysis - PCs ', comps[1] , ' and ', comps[2]), 
+             x = paste0('PC', comps[1], ' (', prp_comps[1], '%)'), 
+             y = paste0('PC', comps[2], ' (', prp_comps[2], '%)')) + 
+        geom_text(label = colnames(read.counts)) +
+        scale_color_manual(values = col)
+  return(p)
+}
+```
+
+#PLOT PCA
+
+```{r}
+
+conds <- as.factor(sample_sheet$resistance_label)
+
+p <- pca.plot(vst_counts, conds, comps = c(1,2), ntop =50, 
+              col = brewer.pal(max(3, nlevels(conds)), 'Set2'))
+ggplotly(p)
+```
+
+
+
+#RESEARCH QVALUE
+```{r}
+p <- ggplot(as.data.frame(res_less_vs_int), aes(x = pvalue)) + geom_histogram(fill = '#619CFF', bins = 100)
+p
+
+```
+```{r}
+p <- ggplot(as.data.frame(res_more_vs_int), aes(x = pvalue)) + geom_histogram(fill = '#619CFF', bins = 100)
+p
+```
+
+#PLOT MA
+```{r}
+plotMA(res_less_vs_int)
+```
+```{r}
+plotMA(res_more_vs_int)
+```
+
+#PLOT HEATMAP
+```{r}
+png(filename="TALA_LESS_INT.png", width=900, bg="white")
+par(mar=c(2,4,4,10)+.1)
+heatmap.2(
+  t(log10(vst_counts+1)[which(res_less_vs_int$padj < 0.05),]), trace='none', cexRow=1.5,cexCol=1,margins=c(12,8))
+graphics.off()
+
+```
+
+```{r}
+png(filename="TALA_MORE_INT.png", width=900, bg="white")
+par(mar=c(2,4,4,10)+.1)
+heatmap.2(
+  t(log10(vst_counts+1)[which(res_more_vs_int$padj < 0.05),]), trace='none', cexRow=1.5,cexCol=1,margins=c(12,8))
+graphics.off()
+```
+
+
+#VOLCANO PLOT
+```{r}
+valid_index <- which(!is.na(res_less_vs_int$padj))
+    df <- data.frame(
+      pvals = res_less_vs_int$padj[valid_index],
+      lfcs = res_less_vs_int$log2FoldChange[valid_index],
+      gene = rownames(res_less_vs_int)[valid_index])
+  
+df$significant = as.factor(df$pvals < 0.05)
+    
+p <- ggplot(df, aes(x = lfcs, y = -log10(pvals), colour = significant, gene = gene)) +
+      geom_point(alpha = 0.8, size = 2) +
+      labs(title = 'Volcano Plot, Talazoparib, Less Resistant vs Intermediate',x = 'log2 fold change', y = '-log10 p-value') +
+      scale_color_manual(values = c('#619CFF', '#F564E3'))
+      p
+```
+```{r}
+
+#VOLCANO PLOT
+
+valid_index <- which(!is.na(res_more_vs_int$padj))
+    df <- data.frame(
+      pvals = res_more_vs_int$padj[valid_index],
+      lfcs = res_more_vs_int$log2FoldChange[valid_index],
+      gene = rownames(res_more_vs_int)[valid_index])
+  
+df$significant = as.factor(df$pvals < 0.05)
+    
+p <- ggplot(df, aes(x = lfcs, y = -log10(pvals), colour = significant, gene = gene)) +
+      geom_point(alpha = 0.8, size = 2) +
+      labs(title = 'Volcano Plot, Talazoparib, More Resistant vs Intermediate',x = 'log2 fold change', y = '-log10 p-value') +
+      scale_color_manual(values = c('#619CFF', '#F564E3'))
+      p
+```
+
+
+
+
+#SAVE RESULTS
+```{r}
+genes <- sort(row.names(dds))
+res.table <- DataFrame(row.names = genes, log2FoldChange = res_more_vs_int$log2FoldChange, pvalue = res_more_vs_int$pvalue, padj = res_more_vs_int$padj)
+
+write.csv(res.table, file = paste0('DESeq2_results-tala-res_more_vs_int.csv'))
+```
+
+```{r}
+genes <- sort(row.names(dds))
+res.table <- DataFrame(row.names = genes, log2FoldChange = res_less_vs_int$log2FoldChange, pvalue = res_less_vs_int$pvalue, padj = res_less_vs_int$padj)
+
+write.csv(res.table, file = paste0('DESeq2_results-tala-res_less_vs_int.csv'))
+```
+
+
+```{r}
+source <- '~/Documents/BIOINFORMATICS MSC/Project/FINAL_FILES/6(TALA)DESEQ_CODE_PROJECT_LESS-INT-MORE.Rmd'
+new <- '~/Documents/BIOINFORMATICS MSC/Project/FINAL_FILES/6(OLA)DESEQ_CODE_PROJECT_LESS-INT-MORE.Rmd'
+
+file.copy(source, new)
+```
+
